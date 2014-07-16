@@ -5,8 +5,7 @@
 */
 
 #pragma semicolon 1
-#include <adminmenu>
-#include <cstrike>
+//#include <adminmenu>
 #include <sourcemod>
 //#include <sdktools>
 
@@ -16,8 +15,8 @@ public Plugin:myinfo =
 	name = "ConnectIfo [by атомхост.рф]", 
 	author = "merk™", 
 	description = "Плагин из серии Мульти Фрукт. Кирилическая информация о подключившемся игроке (Страна | Город | Регион | Дистрикт) + мелкие настройки", 
-	version = "1.1", 
-	url = "https://vk.com/merk26"
+	version = "1.2", 
+	url = "www.атомхост.рф"
 }
 
 // конвары
