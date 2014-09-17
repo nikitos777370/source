@@ -1,328 +1,159 @@
 #pragma semicolon 1
 #include <sourcemod>
-#include <morecolors>
-#include <socket>
-#include <sdktools> 
+#include <sdktools>
 
-public Plugin:myinfo = 
-{ 
-	name = "ConnectIfo", 
-	author = "merk26", 
-	description = "Плагин из серии Мульти Фрукт. Кириллическая информация о подключившемся игроке + мелкие настройки", 
-	version = "1.3", 
-	url = "www.атомхост.рф"
-}
+new Handle:h_aak_Enabled, Handle:h_aak_TeamKill, Handle:h_aak_Add_0Slot, Handle:h_aak_Add_1Slot , Handle:h_aak_AmmoRate, Handle:h_aak_AddGranade, Handle:h_aak_Access, Handle:h_aak_MsgEnabled, Handle:h_aak_Add_HSOnly;
+new bool:b_aak_enabled, bool:b_aak_teamlill, bool:b_aak_0slot,  bool:b_aak_1slot, bool:b_aak_3slot, bool:b_aak_msg, bool:b_aak_hsonly;
+new Float:i_aak_rate, i_aak_flags;
+new String:WeaponNames[24][64] ={/*пушки 0..17 */"galil","ak47","scout","sg552","awp","g3sg1","famas","m4a1","aug","sg550","m3","xm1014","mac10","tmp","mp5navy","ump45","p90","m249",/*пистоли 18..22*/ "glock","usp","p228","deagle","elite","fiveseven"};
+new WeaponClips[24] ={/*пушки 0..17 */35,30,10,30,10,20,25,30,30,30,8,7,30,30,30,25,50,100,/*пистоли 18..22*/20,12,13,7,30,20};
 
-// хендлы
-new Handle: h_ci_COldHide, 	Handle:h_ci_DOldHide, 		Handle:h_ci_Enable, 		Handle:g_ci_PTimer, 		Handle:g_ci_ShowStatusID, 	Handle:g_ci_ShowGeo, 	Handle:g_ci_ShowDistrict, 	Handle:g_ci_Log, 
-	Handle:h_ci_IPShow,		Handle:g_ci_WelcomeSound,	Handle:h_ci_StemIDShow, 	Handle:g_ci_ShowLines,  	Handle:h_ci_DisconnectMsg,  Handle:g_ci_EnterSound, Handle:g_ci_ExitSound;
-// булеты
-new bool:p_ci_coldhide, 	bool:p_ci_doldhide, 		bool:p_ci_enable, 		bool:p_ci_showstatussteam, 	bool:p_ci_showgeoinfo, 		bool:p_ci_showdistrict, 	bool:p_ci_writelog, 	bool:p_ci_showlines,
-	bool:p_ci_enable_ip, 	bool:p_ci_enable_steamid, 	bool:p_ci_exitmsg;
-// стринги
-new String:g_IP[MAXPLAYERS + 1][25], String:s_ci_welcomesoung[128], String:s_ci_entersoung[128], String:s_ci_exitsoung[128];
+public Plugin:myinfo =
+{
+	name = "MF Ammo at kill",
+	description = "Выдает патроны за убийство",
+	author = "merk26",
+	version = "1.2",
+	url = "http://www.атомхост.рф/"
+};
 
 public OnPluginStart()
 {
 
-	h_ci_COldHide 			= CreateConVar("mf_ci_coldhide" , 		"1", 	"Скрыть стандартное сообщение о подключении", _, true, 0.0, true, 1.0);
-	h_ci_DOldHide 			= CreateConVar("mf_ci_doldhide" , 		"1", 	"Скрыть стандартное сообщение об отключении", _, true, 0.0, true, 1.0);
-	h_ci_DisconnectMsg 		= CreateConVar("mf_ci_exitmsg" , 		"1", 	"Показывать сообщение об отключении", _, true, 0.0, true, 1.0);
-	h_ci_IPShow				= CreateConVar("mf_ci_showip", 			"1", 	"Показывать IP игрока", _, true, 0.0, true, 1.0);
-	h_ci_StemIDShow			= CreateConVar("mf_ci_showstemid", 		"1", 	"Показывать SteamID игрока", _, true, 0.0, true, 1.0);
-	h_ci_Enable 			= CreateConVar("mf_ci_enable", 			"1", 	"Вкл/Выкл плагин", _, true, 0.0, true, 1.0);
-	g_ci_ShowLines 			= CreateConVar("mf_ci_showlines", 		"1", 	"Отделять информационный блок линиями", _, true, 0.0, true, 1.0);
-	g_ci_PTimer 			= CreateConVar("mf_ci_ptimer", 			"30.0", "Время через которое (после старта карты) начнут отображаться сообщения (для защиты от перегрузок при массовом реконнекте)", _, true, 10.0, true, 120.0);
-	g_ci_ShowStatusID 		= CreateConVar("mf_ci_showstatussteam", "1", 	"Показывать информации о статусе лицензии Steam", _, true, 0.0, true, 1.0);
-	g_ci_ShowGeo 			= CreateConVar("mf_ci_showgeoinfo", 	"1", 	"Показывать информацию о стране + городе + крае игрока", _, true, 0.0, true, 1.0);
-	g_ci_ShowDistrict 		= CreateConVar("mf_ci_showdistrict", 	"1", 	"Показывать информации о дистрикте игрока", _, true, 0.0, true, 1.0);
-	g_ci_Log 				= CreateConVar("mf_ci_writelog", 		"1", 	"Запись подключений в лог файл (если  mf_connect_info = 1)", _, true, 0.0, true, 1.0);
-	g_ci_WelcomeSound		= CreateConVar("mf_ci_welcomesound", 	"atomhost/hello.mp3", 	"Звук приветствия для игрока (проиграется во время показа инфы в чате); \"off\" - выкл");
-	g_ci_EnterSound			= CreateConVar("mf_ci_entersound", 		"atomhost/enter.mp3", 	"Звуковое уведомление игроков о входе нового игрока; \"off\" - выкл");
-	g_ci_ExitSound			= CreateConVar("mf_ci_exitsound", 		"atomhost/exit.mp3", 	"Звуковое уведомление о выходе игрока; \"off\" - выкл");
+	h_aak_Enabled 			= CreateConVar("mf_aak_enabled", 		"1", 	"Включить/Выключить плагин", _, true, 0.0, true, 1.0);
+	h_aak_MsgEnabled		= CreateConVar("mf_aak_msg", 			"1", 	"Показывать сообщения о пополнении (внизу экрана)", _, true, 0.0, true, 1.0);
+	h_aak_TeamKill 			= CreateConVar("mf_aak_teamkill", 		"0", 	"Давать патроны за тимкилл", _, true, 0.0, true, 1.0);
+	h_aak_Add_HSOnly 		= CreateConVar("mf_aak_hsonly", 		"1", 	"Пополнять боезапасы только при убийстве в голову (mf_aak_0slot и mf_aak_1slot влияют)", _, true, 0.0, true, 1.0);
+	h_aak_Add_0Slot 		= CreateConVar("mf_aak_0slot", 			"1", 	"Пополнять боезапасы штурмового оружия", _, true, 0.0, true, 1.0);
+	h_aak_Add_1Slot 		= CreateConVar("mf_aak_1slot", 			"1", 	"Пополнять боезапасы пистолета", _, true, 0.0, true, 1.0);
+	h_aak_AmmoRate 			= CreateConVar("mf_aak_rate", 			"0.7", 	"Коэффиицент восстановления боеприпасов", _, true, 0.1, true, 1.0);
+	h_aak_AddGranade 		= CreateConVar("mf_aak_3slot", 			"1", 	"Выдавать вторую гранату (при убийстве с боевый гранаты)", _, true, 0.0, true, 1.0);
+	h_aak_Access 			= CreateConVar("mf_aak_access", 		"", 	"Флаг доступа (оставьте пустым для простых игроков)");
 	
-	AutoExecConfig(true, "mf_conect_info");
-	LoadTranslations("mf_conect_info.phrases"); 
+	AutoExecConfig(true, "mf_ammo_at_kill");
 	
-	//отлавливаем изменение cvar's
-	HookConVarChange(h_ci_COldHide, OnConVarChanged);
-	HookConVarChange(h_ci_DOldHide, OnConVarChanged);
-	HookConVarChange(h_ci_Enable, OnConVarChanged);
-	HookConVarChange(g_ci_ShowLines, OnConVarChanged);
-	HookConVarChange(g_ci_ShowStatusID, OnConVarChanged);
-	HookConVarChange(g_ci_ShowGeo, OnConVarChanged);
-	HookConVarChange(g_ci_ShowDistrict, OnConVarChanged);
-	HookConVarChange(g_ci_Log, OnConVarChanged);
-	HookConVarChange(h_ci_IPShow, OnConVarChanged);
-	HookConVarChange(h_ci_StemIDShow, OnConVarChanged);
-	HookConVarChange(h_ci_DisconnectMsg, OnConVarChanged);
-	
-	
-	// перехват событий
-	HookEvent("player_connect",		player_connect,		EventHookMode_Pre);
-	HookEvent("player_disconnect",	player_disconnect,	EventHookMode_Pre);
-	
-}
+	HookConVarChange(h_aak_Enabled, CvarChanges);
+	HookConVarChange(h_aak_TeamKill, CvarChanges);
+	HookConVarChange(h_aak_MsgEnabled, CvarChanges);
+	HookConVarChange(h_aak_Add_0Slot, CvarChanges);
+	HookConVarChange(h_aak_Add_1Slot, CvarChanges);
+	HookConVarChange(h_aak_AddGranade, CvarChanges);
+	HookConVarChange(h_aak_AmmoRate, CvarChanges);
+	HookConVarChange(h_aak_Add_HSOnly, CvarChanges);
+	HookConVarChange(h_aak_Access, CvarChanges);
 
-public OnConVarChanged(Handle:convar, const String:oldValue[], const String:newValue[])
-{
-	if (convar == h_ci_COldHide)
-		p_ci_coldhide = GetConVarBool(convar);
-	else if (convar == h_ci_DOldHide)
-		p_ci_doldhide = GetConVarBool(convar);
-	else if (convar == h_ci_Enable)
-		p_ci_enable = GetConVarBool(convar);
-	else if (convar == g_ci_ShowLines)
-		p_ci_showlines = GetConVarBool(convar);
-	else if (convar == g_ci_ShowStatusID)
-		p_ci_showstatussteam = GetConVarBool(convar);
-	else if (convar == g_ci_ShowGeo)
-		p_ci_showgeoinfo = GetConVarBool(convar);
-	else if (convar == g_ci_ShowDistrict)
-		p_ci_showdistrict = GetConVarBool(convar);
-	else if (convar == g_ci_Log)
-		p_ci_writelog = GetConVarBool(convar);
-	else if (convar == h_ci_IPShow)
-		p_ci_enable_ip = GetConVarBool(convar);
-	else if (convar == h_ci_StemIDShow)
-		p_ci_enable_steamid	= GetConVarBool(convar);
-	else if (convar == h_ci_DisconnectMsg) 
-		p_ci_exitmsg = GetConVarBool(convar);
+	HookEvent("player_death", OnPlayerDeath, EventHookMode:1);
+	return 0;
 }
 
 public OnConfigsExecuted()
 {
-	GetConVarString(g_ci_WelcomeSound, s_ci_welcomesoung, sizeof(s_ci_welcomesoung));
-	GetConVarString(g_ci_EnterSound, s_ci_entersoung, sizeof(s_ci_entersoung));
-	GetConVarString(g_ci_ExitSound, s_ci_exitsoung, sizeof(s_ci_exitsoung));
+	b_aak_enabled 	= GetConVarBool(h_aak_Enabled);
+	b_aak_teamlill 	= GetConVarBool(h_aak_TeamKill);
+	b_aak_msg 		= GetConVarBool(h_aak_MsgEnabled);
+	b_aak_0slot 	= GetConVarBool(h_aak_Add_0Slot);
+	b_aak_1slot		= GetConVarBool(h_aak_Add_1Slot);
+	b_aak_3slot 	= GetConVarBool(h_aak_AddGranade);
+	b_aak_hsonly 	= GetConVarBool(h_aak_Add_HSOnly);
+	i_aak_rate		= GetConVarFloat(h_aak_AmmoRate);
 	
-	if(!StrEqual(s_ci_welcomesoung, "off", false))
-	{
-		decl String:buf[128];
-		Format(buf, 128, "sound/%s", s_ci_welcomesoung);
-		AddFileToDownloadsTable(buf);
-		PrecacheSound(s_ci_welcomesoung, true);
-	}	
-	if(!StrEqual(s_ci_entersoung, "off", false))
-	{
-		decl String:buf[128];
-		Format(buf, 128, "sound/%s", s_ci_entersoung);
-		AddFileToDownloadsTable(buf);
-		PrecacheSound(s_ci_entersoung, true);
-	}	
-	if(!StrEqual(s_ci_exitsoung, "off", false))
-	{
-		decl String:buf[128];
-		Format(buf, 128, "sound/%s", s_ci_exitsoung);
-		AddFileToDownloadsTable(buf);
-		PrecacheSound(s_ci_exitsoung, true);
-	}
-	
-	p_ci_coldhide 			= GetConVarBool(h_ci_COldHide);
-	p_ci_doldhide 			= GetConVarBool(h_ci_DOldHide);
-	p_ci_showlines 			= GetConVarBool(g_ci_ShowLines);
-	p_ci_showstatussteam 	= GetConVarBool(g_ci_ShowStatusID);
-	p_ci_showgeoinfo 		= GetConVarBool(g_ci_ShowGeo);
-	p_ci_showdistrict 		= GetConVarBool(g_ci_ShowDistrict);
-	p_ci_writelog 			= GetConVarBool(g_ci_Log);
-	p_ci_exitmsg 			= GetConVarBool(h_ci_DisconnectMsg);
-	p_ci_enable_ip			= GetConVarBool(h_ci_IPShow);
-	p_ci_enable_steamid		= GetConVarBool(h_ci_StemIDShow);
-
-}
-
-
-public OnMapStart()
-{
-	p_ci_enable = false;
-	CreateTimer(GetConVarFloat(g_ci_PTimer), t_star_connect_info);
+	decl String:buf[16];
+	GetConVarString(h_aak_Access, buf, sizeof(buf));
+	i_aak_flags		= ReadFlagString(buf);
 	return 0;
 }
 
-// включаем плагин обратно, если он был включен
-public Action:t_star_connect_info(Handle:timer)
+public CvarChanges(Handle:convar, String:oldValue[], String:newValue[])
 {
-	if(GetConVarBool(h_ci_Enable)) 
-		p_ci_enable = true;
-	return Plugin_Stop;
+	if (convar 	== h_aak_Enabled) 			b_aak_enabled 	= GetConVarBool(convar);
+	else if (convar == h_aak_TeamKill)		b_aak_teamlill 	= GetConVarBool(convar);
+	else if (convar == h_aak_MsgEnabled) 	b_aak_msg 		= GetConVarBool(convar);
+	else if (convar == h_aak_Add_0Slot) 	b_aak_0slot 	= GetConVarBool(convar);
+	else if (convar == h_aak_Add_1Slot) 	b_aak_1slot		= GetConVarBool(convar);
+	else if (convar == h_aak_AddGranade) 	b_aak_3slot 	= GetConVarBool(convar);
+	else if (convar == h_aak_Add_HSOnly) 	b_aak_hsonly 	= GetConVarBool(convar);
+	else if (convar == h_aak_AmmoRate) 		i_aak_rate 		= GetConVarFloat(convar);
+	else if (convar == h_aak_Access)		i_aak_flags 	= ReadFlagString (newValue);
+
+	return 0;
 }
 
-public Action:player_connect(Handle:event, const String:name[], bool:silent)
-{ 
+public OnPlayerDeath(Handle:event, String:name[], bool:dontBroadcast)
+{
+	if (!b_aak_enabled)	return 0; // используем return чтобы не делать кучу условий в условии
 	
-	if(p_ci_coldhide) // скрываем стандартное сообщение если того требуют
-		return Plugin_Handled;
-	else
-		return Plugin_Continue;
-}
-
-public Action:player_disconnect(Handle:event, const String:name[], bool:silent)
-{
-	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	if(client)// двойной if, так надо!
-	{
-		if(!IsFakeClient(client) && p_ci_exitmsg) //показываем сообщение об отключении
-			CPrintToChatAll("%t", "player disconnect", client);
-			// играем звук выхода
-		if(!IsFakeClient(client) && !StrEqual(s_ci_exitsoung, "off", false))
-			EmitSoundToAll(s_ci_exitsoung);
-	}
-	if(p_ci_doldhide) 
-		return Plugin_Handled;
-	else 
-		return Plugin_Continue;
-}
-
-public OnClientPutInServer(client){		
-	// глушим недоразумения в зачатке
-	if(!p_ci_enable || IsFakeClient(client) || !GetClientIP(client, g_IP[client], 25)) 
+	new victim = GetClientOfUserId(GetEventInt(event, "userid"));
+	new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+	new bool:headshot = GetEventBool(event, "headshot");
+	
+	if (attacker<1) //проверяем валидность
 		return 0;
-		// играем звук входа
-	if(!StrEqual(s_ci_entersoung, "off", false))
-	{
-		for(new i = 1; i <= MaxClients; i++) 
-		{
-			if(IsClientInGame(i) && !IsFakeClient(i) && i!=client)
-				EmitSoundToClient(i, s_ci_entersoung);
-				
-		}
-	}
 		
-	//открываем соединенее с сервером и храним хендл
-	new Handle:socket = SocketCreate(SOCKET_TCP, OnSocketError);
-	SocketSetArg(socket, GetClientUserId(client));
-	SocketConnect(socket, OnSocketConnected, OnSocketReceive, OnSocketDisconnected, "ip.css26.ru", 80);
-	
-	return 0;
-} 
-
-
-// отправка запроса
-public OnSocketConnected(Handle:socket, any:id)
-{
-	new client = GetClientOfUserId(id);
-	if (client < 1)
+	new attackerflags = GetUserFlagBits(attacker);	
+	if(i_aak_flags > 0 && i_aak_flags > attackerflags)
 		return 0;
-	decl String:info[150];
-	//формируем запрос
-	Format(info, 150, "GET /ip/index.php?s=%s HTTP/1.0\r\nHost: ip.css26.ru\r\nConnection: close\r\n\r\n", g_IP[client]);
-	//посылаем
-	SocketSend(socket, info);
-	return 0;
-}
-// обрабатываем р-аты запроса
-public OnSocketReceive(Handle:socket, String:receiveData[], const dataSize, any:id)
-{
-	CloseHandle(socket); // прикрываем дырочку
-	// создаем хлам
-	decl client;
-	decl String:steamid[20], String:i_country[25], String:i_city[35],	String:i_region[50], String:i_district[70];
+		
+	if (attacker == victim) 
+		return 0; 	//прерываем суицид
+	if (GetClientTeam(victim) == GetClientTeam(attacker) && !b_aak_teamlill)  
+		return 0; //проверяем на тимкилл
 	
-	client = GetClientOfUserId(id);
-	// проверяем, чем черт не шутит...
-	if(client<1) return 0;
-	// играем звук приветствия
-	if(!StrEqual(s_ci_welcomesoung, "off", false))
-		EmitSoundToClient(client, s_ci_welcomesoung);
-	//извлекаем стимид 
-	if (!GetClientAuthString(client, steamid, 20)) strcopy(steamid, 20, "steam: -");
-	// печатаем верхнюю границу, если нужно
-	if(p_ci_showlines) CPrintToChatAll("%t", "line");
-	// печатаем стим и статус лицензии если нужно
-	if (p_ci_showstatussteam)
+	new weapon_0slot;
+	new weapon_1slot;
+	decl String:AttackerWeapon[64];
+	GetClientWeapon(attacker, AttackerWeapon, 64);
+	ReplaceString(AttackerWeapon, 64, "weapon_", "", false);
+	
+		
+	decl String:weapon_dead[64];								// берем оружие с которого убили, для выдачи гранаты
+	GetEventString(event, "weapon", weapon_dead, sizeof(weapon_dead));
+	
+	if(StrEqual(weapon_dead, "hegrenade", false) && b_aak_3slot) // даем гранату, если просят
 	{
-		if(CheckSteamID(steamid)) 
-			CPrintToChatAll("%t", "enter steam", client);
-		else 
-			CPrintToChatAll("%t", "enter nosteam", client);
+		GivePlayerItem(attacker, "weapon_hegrenade"); 
+		if(b_aak_msg) PrintHintText(attacker, "Вы получили боевую гранату!");
 	}
-	else 
-		CPrintToChatAll("%t", "enter", client);
-	// печатаем сам стимид
-	if(p_ci_enable_steamid) 
-		CPrintToChatAll("%t", "staemid", steamid);
-	// печатаем ип
-	if(p_ci_enable_ip) 
-		CPrintToChatAll("%t", "ip", g_IP[client]);
-	//потрошим массив
-	if (p_ci_showgeoinfo)
-	{
-		new pos = StrContains(receiveData, "<country>", false);
-		if (pos > 0) 
-		{ 
-			SplitString(receiveData[pos + 9], "</country>", i_country, 25);
-			pos = 0; 
-			
-			pos = StrContains(receiveData, "<city>", false);
-			if (pos > 0) 
-			{
-				SplitString(receiveData[pos + 6], "</city>", i_city, 35);
-				pos = 0; 
-			}
-			
-			pos = StrContains(receiveData, "<region>", false);
-			if (pos > 0) 
-			{
-				SplitString(receiveData[pos + 8], "</region>", i_region, 50);
-				pos = 0;
-				if(i_region[0] == '-')
-				{
-					CPrintToChatAll("%t", "country", i_country);
-					CPrintToChatAll("%t", "no data");
-				}
-				else
-				{
-					if (StrEqual(i_city, i_region, false))
-						CPrintToChatAll("%t%t", "country", i_country, "city", i_city);
-					else 
-						CPrintToChatAll("%t%t%t", "country", i_country, "city", i_city, "region" ,i_region);
-					
-					if(p_ci_showdistrict)
-					{
-						pos = StrContains(receiveData, "<district>", false);
-						if (pos > 0) 
-						{
-							SplitString(receiveData[pos + 10], "</district>", i_district, 70);
-							CPrintToChatAll("%t", "district", i_district);
-						}
-					}
-				}
-			}
-		} 
-		else
-			CPrintToChatAll("%t", "no connect");
-	}
-	// пише в лог
-	if (p_ci_writelog) 
+	
+	if(!headshot && b_aak_hsonly) 
+		return 0; //проверяем на хедшот
+	
+	weapon_0slot = GetPlayerWeaponSlot(attacker, 0);
+	weapon_1slot = GetPlayerWeaponSlot(attacker, 1);
+	
+	if(b_aak_0slot && IsValidEdict(weapon_0slot)) // обрабатываем основное оружие
 		{
-			decl String:date[21];
-			FormatTime(date, sizeof(date), "%d%m%y", -1);
-			decl String:file[PLATFORM_MAX_PATH];
-			BuildPath(Path_SM, file, sizeof(file), "logs/connect_info_%s.log", date); 
-			LogToFileEx(file, "%s - %s - %N - %s - %s - %s - %s", g_IP[client], steamid, client, i_country, i_city, i_region, i_district);
+			for(new i = 0; i<18;i++)
+			{
+				if (!StrEqual(WeaponNames[i], AttackerWeapon, false)) 
+					continue;
+				new rem_ammo = GetWeaponClip(weapon_0slot);
+				new add_ammo =  RoundFloat((float(WeaponClips[i]) - float(rem_ammo)) * i_aak_rate);
+				SetWeaponClip(weapon_0slot, rem_ammo + add_ammo);
+				if(b_aak_msg) PrintHintText(attacker, "Боезапас пополнен (+%i)", add_ammo);
+			}
 		}
-	// печатаем нижнюю границу, если нужно
-	if(p_ci_showlines) 
-		CPrintToChatAll("%t", "line");
-
+	if(b_aak_1slot && IsValidEdict(weapon_1slot)) // обрабатываем пистолет
+		{
+			for(new i = 18; i<24;i++)
+			{
+				if (!StrEqual(WeaponNames[i], AttackerWeapon, false)) 
+					continue;
+				new rem_ammo = GetWeaponClip(weapon_1slot);
+				new  add_ammo =  RoundFloat((float(WeaponClips[i]) - float(rem_ammo)) * i_aak_rate);
+				SetWeaponClip(weapon_1slot, rem_ammo + add_ammo);
+				if(b_aak_msg) PrintHintText(attacker, "Боезапас пополнен (+%i)", add_ammo);
+			}
+		}
 	return 0;
 }
 
-public OnSocketDisconnected(Handle:socket, any:id)
+SetWeaponClip(weapon, value) //меняем кол-во патронов
 {
-	CloseHandle(socket);
+	SetEntProp(weapon, PropType:1, "m_iClip1", value, 4);
+	return 0;
 }
-
-public OnSocketError(Handle:socket, const errorType, const errorNum, any:id)
+GetWeaponClip(weapon) // узнаем кол-во патронов в рожке
 {
-	CloseHandle(socket);
-	if(errorType !=3) LogError("Ошибка сокета (errno %d)", errorNum);
-}
-
-public CheckSteamID(String:steamid[20]) // true если игрок Steam и false если no staem
-{
-	if(strlen(steamid) != 19) 
-		return true;
-	else 
-		return false;
+	new data = GetEntProp(weapon, PropType:1, "m_iClip1");
+	return data;
 }
